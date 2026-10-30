@@ -1,0 +1,32 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Android / Gradle
+android-app/local.properties
+android-app/.gradle/
+android-app/build/
+android-app/app/build/
+android-app/.idea/
+*.iml
+captures/
+
+# Downloaded by scripts/get-wake-model.sh
+android-app/app/src/main/assets/model-en-in/
+
+# Voice samples rendered by tools/
+voices/
+
+# Secrets never live in the repo (CJ keeps them in ~/.cj), but just in case
+.env
+*.key
+config.json
+
+# macOS
+.DS_Store
+
+# Audio clips made by tools/wake_test.py
+*.wav
+*.aiff

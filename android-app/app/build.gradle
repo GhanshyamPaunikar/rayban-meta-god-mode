@@ -1,0 +1,49 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+    id 'org.jetbrains.kotlin.plugin.compose'
+}
+
+android {
+    namespace 'com.cj.glasses'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'com.cj.glasses'
+        minSdk 29
+        targetSdk 34
+        versionCode 3
+        versionName '1.0'
+        // Developer Mode in the Meta AI app: both IDs are "0". Real values come from the Wearables Developer Center later.
+        // String resources, not manifest placeholders: a bare "0" in the manifest would be read as a number.
+        resValue 'string', 'mwdat_application_id', '0'
+        resValue 'string', 'mwdat_client_token', '0'
+    }
+
+    buildFeatures {
+        compose true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation platform('androidx.compose:compose-bom:2024.09.03')
+    implementation 'androidx.compose.material3:material3'
+    implementation 'androidx.compose.ui:ui'
+    implementation 'androidx.activity:activity-compose:1.9.2'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'
+    implementation 'com.meta.wearable:mwdat-core:1.0.1'
+    implementation 'com.meta.wearable:mwdat-camera:1.0.1'
+    // Offline "Hey G" wake word. Vosk needs JNA as an Android AAR, not the desktop jar.
+    implementation('com.alphacephei:vosk-android:0.3.75') { exclude group: 'net.java.dev.jna' }
+    implementation 'net.java.dev.jna:jna:5.18.1@aar'
+}

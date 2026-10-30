@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A pair of glasses with a spark: CJ on Ray-Ban Meta. Drawn inside the adaptive-icon safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:strokeColor="#FFE6E1FF" android:strokeWidth="4.5" android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M30,50 L50,50 L48,63 Q47,68 41,68 L36,68 Q31,68 30,63 Z"/>
+    <path android:strokeColor="#FFE6E1FF" android:strokeWidth="4.5" android:strokeLineJoin="round"
+        android:fillColor="#00000000"
+        android:pathData="M58,50 L78,50 L77,63 Q76,68 71,68 L66,68 Q61,68 60,63 Z"/>
+    <path android:strokeColor="#FFE6E1FF" android:strokeWidth="4.5" android:strokeLineCap="round"
+        android:fillColor="#00000000" android:pathData="M50,53 Q54,49 58,53 M30,51 L25,49 M78,51 L83,49"/>
+    <path android:fillColor="#FF2DD4BF"
+        android:pathData="M54,30 L56.5,37.5 L64,40 L56.5,42.5 L54,50 L51.5,42.5 L44,40 L51.5,37.5 Z"/>
+</vector>

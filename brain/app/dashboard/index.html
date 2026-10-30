@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CJ Mission Control</title>
+<style>
+:root { --bg:#f5f7f9; --surface:#fff; --ink:#15202b; --muted:#566573; --line:#d9e0e7; --accent:#1d5fa8; --bad:#9b2c2c; --good:#2c6e49; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0f151b; --surface:#161e26; --ink:#e4eaf0; --muted:#9aa8b5; --line:#2a3541; --accent:#7fb2ea; --bad:#ef9a9a; --good:#8fd1a9; } }
+body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, sans-serif; padding:0 16px; }
+header { max-width:860px; margin:0 auto; padding:24px 0 12px; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+h1 { margin:0; font-size:22px; }
+#status { color:var(--muted); font-size:13px; }
+#status.on { color:var(--good); } #status.off { color:var(--bad); }
+main { max-width:860px; margin:0 auto; padding-bottom:48px; display:grid; gap:8px; }
+.ev { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:8px 12px; display:grid; grid-template-columns:76px 104px 1fr; gap:8px; }
+.ev time { color:var(--muted); font:12px ui-monospace, monospace; padding-top:2px; }
+.kind { font:12px ui-monospace, monospace; color:var(--accent); padding-top:2px; }
+.kind.model_failed, .kind.error { color:var(--bad); }
+.body { min-width:0; overflow-wrap:anywhere; }
+.meta { color:var(--muted); font-size:13px; }
+#empty { color:var(--muted); }
+</style>
+</head>
+<body>
+<header><h1>CJ Mission Control</h1><span id="status" class="off">connecting…</span></header>
+<main id="log"><p id="empty">Waiting for CJ to hear something.</p></main>
+<script>
+const token = new URLSearchParams(location.search).get("token") || "";
+const log = document.getElementById("log"), status = document.getElementById("status");
+const text = (e) => ({
+  heard: () => `“${e.text}”<span class="meta"> · ${e.mode}${e.spoken ? " · spoken" : ""}${e.has_image ? " · photo" : ""}</span>`,
+  needs_photo: () => `Needs to look first<span class="meta"> · ${e.ms} ms</span>`,
+  answer: () => `${e.spoken}<span class="meta"> · ${e.mode}${e.ms ? " · " + e.ms + " ms" : ""}</span>`,
+  model_call: () => `${e.provider} / ${e.model}<span class="meta"> · ${e.task} · ${e.latency_ms} ms · ${e.tokens_in}→${e.tokens_out} tokens</span>`,
+  model_failed: () => `${e.provider} failed, trying the next one<span class="meta"> · ${e.error}</span>`,
+  kb_import: () => `Imported “${e.title}”<span class="meta"> · ${e.chunks} chunks</span>`,
+  error: () => `${e.where}: ${e.error}`,
+}[e.kind] || (() => JSON.stringify(e)))();
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function add(e) {
+  document.getElementById("empty")?.remove();
+  const row = document.createElement("div");
+  row.className = "ev";
+  const safe = {}; for (const k in e) safe[k] = typeof e[k] === "string" ? esc(e[k]) : e[k];
+  row.innerHTML = `<time>${new Date(e.t * 1000).toLocaleTimeString()}</time><span class="kind ${e.kind}">${e.kind}</span><div class="body">${text(safe)}</div>`;
+  log.prepend(row);
+}
+function connect() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/dashboard?token=${encodeURIComponent(token)}`);
+  ws.onopen = () => { status.textContent = "live"; status.className = "on"; };
+  ws.onmessage = (m) => add(JSON.parse(m.data));
+  ws.onclose = (c) => { status.textContent = c.code === 4401 ? "bad token: open the link printed by app.pair" : "disconnected, retrying…"; status.className = "off"; if (c.code !== 4401) setTimeout(connect, 2000); };
+}
+connect();
+</script>
+</body>
+</html>
