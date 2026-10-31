@@ -2,7 +2,7 @@
 
 Needs macOS (it uses `say` voices), the model from scripts/get-wake-model.sh, and:  pip install vosk
 Run:  python tools/wake_test.py
-Keep GRAMMAR and the matching rule in sync with android-app/.../WakeWord.kt. Last result: 47/51 (misses: one "CJ, ye kya hai?", one "Hey CJ"; false wakes: "Did you see Jake?").
+Keep GRAMMAR and the matching rule in sync with cj-android/.../Hotword.kt. Last result: 51/51, twice (the old rule, which also woke on partial matches mid-sentence, scored 47/51).
 """
 import json
 import re
@@ -14,11 +14,12 @@ from pathlib import Path
 from vosk import KaldiRecognizer, Model, SetLogLevel
 
 SetLogLevel(-1)
-MODEL = Path(__file__).resolve().parent.parent / "android-app/app/src/main/assets/model-en-in"
+MODEL = Path(__file__).resolve().parent.parent / "cj-android/app/src/main/assets/model-en-in"
 GRAMMAR = json.dumps(["see jay", "c j", "see", "jay", "she", "sea", "city", "okay", "see you", "say", "j", "g", "hey",
                       "jai", "c e o", "the", "joined", "jake", "seat", "[unk]"])
-WAKE = {"see jay", "c j"}
-WAKE_RE = re.compile(r"(^|\s)(see jay|c j)(\s|$)")
+PAIRS = {("see", "jay"), ("c", "j")}
+CALL = {"hey", "okay"}  # words that may come right before the name
+MIN_CONF = 0.4          # settled results: the lowest real "CJ" in this test scored 0.49
 VOICES = ["Rishi", "Aman", "Tara"]  # Indian English voices that ship with macOS
 
 SHOULD_WAKE = ["CJ", "CJ, what time is it?", "CJ, ye kya hai?", "Hey CJ", "CJ, open Spotify"]
@@ -33,17 +34,32 @@ def clip(text: str, voice: str, tmp: Path) -> Path:
     return wav
 
 
+def called(words: list[dict]) -> bool:
+    """Same rule as Hotword.kt: "see jay" / "c j" at the start of what was said or right after "hey" / "okay", and
+    (in settled results) recognised with some confidence. "Did you see Jake?" decodes as "you c j" and is ignored."""
+    for i in range(len(words) - 1):
+        a, b = words[i], words[i + 1]
+        if (a["word"], b["word"]) not in PAIRS:
+            continue
+        if "conf" in a and min(a["conf"], b["conf"]) < MIN_CONF:
+            continue
+        before = words[i - 1] if i else None
+        if before is None or before["word"] in CALL:
+            return True
+    return False
+
+
 def wakes(model: Model, wav: Path) -> bool:
-    """Same rule as WakeWord.kt: a final result containing the wake word, or a partial ending with it."""
     rec = KaldiRecognizer(model, 16000, GRAMMAR)
+    rec.SetWords(True)
     with wave.open(str(wav)) as w:
         while data := w.readframes(2048):
             if rec.AcceptWaveform(data):
-                if WAKE_RE.search(json.loads(rec.Result())["text"]):
+                if called(json.loads(rec.Result()).get("result", [])):
                     return True
-            elif " ".join(json.loads(rec.PartialResult())["partial"].split()[-2:]) in WAKE:
+            elif called([{"word": x} for x in json.loads(rec.PartialResult())["partial"].split()]):
                 return True
-    return bool(WAKE_RE.search(json.loads(rec.FinalResult())["text"]))
+    return called(json.loads(rec.FinalResult()).get("result", []))
 
 
 def main() -> None:

@@ -5,16 +5,16 @@ __pycache__/
 .pytest_cache/
 
 # Android / Gradle
-android-app/local.properties
-android-app/.gradle/
-android-app/build/
-android-app/app/build/
-android-app/.idea/
+cj-android/local.properties
+cj-android/.gradle/
+cj-android/build/
+cj-android/app/build/
+cj-android/.idea/
 *.iml
 captures/
 
 # Downloaded by scripts/get-wake-model.sh
-android-app/app/src/main/assets/model-en-in/
+cj-android/app/src/main/assets/model-en-in/
 
 # Voice samples rendered by tools/
 voices/

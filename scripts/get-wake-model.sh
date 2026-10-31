@@ -3,7 +3,7 @@
 # Run once before building the Android app.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-DEST=android-app/app/src/main/assets/model-en-in
+DEST=cj-android/app/src/main/assets/model-en-in
 if [ -f "$DEST/uuid" ]; then echo "Wake-word model already in $DEST"; exit 0; fi
 TMP=$(mktemp -d)
 curl -fSL -o "$TMP/model.zip" https://alphacephei.com/vosk/models/vosk-model-small-en-in-0.4.zip

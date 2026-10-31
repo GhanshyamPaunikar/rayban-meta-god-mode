@@ -1,5 +1,5 @@
 """Renders the same lines in several Azure (Microsoft) female voices so you can pick CJ's voice.
-Run from brain/:  .venv/bin/python ../tools/azure_voice_samples.py   -> CJ/voices/azure/index.html
+Run from cj-mac/:  .venv/bin/python ../tools/azure_voice_samples.py   -> CJ/voices/azure/index.html
 Uses the Azure key in ~/.cj/config.json (about 3,000 characters of your monthly allowance)."""
 import html
 import sys
