@@ -19,4 +19,4 @@ jobs:
           cache: pip
           cache-dependency-path: cj-mac/requirements.txt
       - run: pip install -r requirements.txt
-      - run: pytest -q
+      - run: python -m pytest -q
