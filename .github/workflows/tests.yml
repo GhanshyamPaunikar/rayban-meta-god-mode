@@ -20,3 +20,15 @@ jobs:
           cache-dependency-path: cj-mac/requirements.txt
       - run: pip install -r requirements.txt
       - run: python -m pytest -q
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t cj-brain cj-mac
+      - name: Start the brain and check it answers
+        run: |
+          docker run -d --name cj -p 8765:8765 -e CJ_HOST_IP=192.168.1.20 cj-brain
+          for i in $(seq 1 30); do curl -sf http://localhost:8765/health && break; sleep 1; done
+          curl -sf http://localhost:8765/health | grep -q '"ok":true'
+          docker logs cj | grep -q "http://192.168.1.20:8765"

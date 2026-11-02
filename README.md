@@ -137,6 +137,32 @@ in git repositories under `~/Documents`, `~/Developer`, `~/Projects`, `~/code` o
 </details>
 
 <details>
+<summary>Running the brain on a NAS or Linux server (Docker)</summary>
+
+<br/>
+
+The brain also runs in Docker, so it can live on an always-on NAS (Synology, QNAP, Unraid) or any Linux machine
+instead of your Mac. The phone still needs to be on the same network.
+
+```bash
+git clone https://github.com/GhanshyamPaunikar/rayban-meta-god-mode.git
+cd rayban-meta-god-mode/cj-mac
+export CJ_HOST_IP=192.168.1.20                    # this machine's address on your network
+docker compose run --rm cj python -m cj.setkey gemini   # stored in the cj-data volume
+docker compose up -d --build
+docker compose logs cj                            # shows the pairing QR code
+```
+
+Then pair from the CJ app as usual. You can also pass keys as environment variables (`CJ_GEMINI_KEY`,
+`CJ_GROQ_KEY`, …) instead of using `cj.setkey`.
+
+Answers, translation, memory, nudges, the phone agent, TV and smart home all work. Anything that controls the Mac
+itself (opening apps, Mail, Calendar, Reminders, screenshots, coding jobs) needs the brain on a Mac and is off
+in Docker. Bonjour discovery is Mac-only too, so give the NAS a fixed address on your router.
+
+</details>
+
+<details>
 <summary>Building the app yourself</summary>
 
 <br/>
@@ -365,13 +391,15 @@ after step 3. It reads back exactly what it is about to do and waits for you to 
 | `CJ_GEMINI_MODELS` | `gemini-3.1-flash-lite,…` | Gemini models in order of preference |
 | `CJ_TIMEZONE` | `Asia/Kolkata` | Your time zone |
 | `CJ_HOME` | `~/.cj` | Keys, pairing token and memory |
+| `CJ_HOST_IP` | | Address put in the pairing QR code; set it when running in Docker |
 
 ## Status and limitations
 
 CJ is an early project. I use it every day, but it has rough edges:
 
-- **It needs your Mac.** The brain runs on your Mac, which has to be on and on the same Wi-Fi as your phone. A
-  cloud brain you can use from anywhere is on the roadmap.
+- **It needs a Mac or a home server.** The brain runs on your Mac, or in Docker on a NAS or Linux machine with
+  Mac-only features off. Either way it has to be on the same Wi-Fi as your phone. A cloud brain you can use from
+  anywhere is on the roadmap.
 - **Android only.** An iOS app is planned and depends on Meta's iOS toolkit.
 - **The phone agent reads app screens.** When Uber, Swiggy or WhatsApp redesign their screens, a flow can break
   until it's updated. It always fails safe: it stops and asks you before doing anything.

@@ -12,6 +12,7 @@ import contextvars
 import glob
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -31,6 +32,8 @@ class MacError(Exception):
 
 def _run(args: list[str]) -> str:
     """Runs one command (no shell). Replaced in tests."""
+    if not shutil.which(args[0]):  # e.g. osascript when the brain runs on Linux or a NAS
+        raise MacError("That needs the brain running on a Mac.")
     done = subprocess.run(args, capture_output=True, text=True, timeout=15)
     if done.returncode != 0:
         err = done.stderr.strip()
