@@ -111,3 +111,10 @@ def test_pairing_prefers_the_wifi_address_over_a_vpn(monkeypatch):
     assert pair.lan_ip() == "192.168.1.14"
     answers["en1"] = "169.254.3.7"  # self-assigned: not on a network yet
     assert pair.lan_ip() == "10.2.0.2"
+
+
+def test_pairing_uses_the_host_ip_when_set(monkeypatch):
+    from cj import pair
+    monkeypatch.setenv("CJ_HOST_IP", "192.168.1.20")  # Docker on a NAS: the container can't see this itself
+    monkeypatch.setattr(pair, "_route_ip", lambda: "172.17.0.2")
+    assert pair.lan_ip() == "192.168.1.20"

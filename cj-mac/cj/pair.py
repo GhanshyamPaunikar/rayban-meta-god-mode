@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -17,8 +18,9 @@ def lan_ip() -> str:
     """The Mac's address on your Wi-Fi (or Ethernet), which is what the phone can reach.
 
     Asking which interface would carry outgoing traffic gives the wrong answer with a VPN on (ProtonVPN, Tailscale…):
-    that's the VPN tunnel, and the phone can't reach it. So the real network ports (en0, en1, …) are asked first."""
-    return _wifi_ip() or _route_ip()
+    that's the VPN tunnel, and the phone can't reach it. So the real network ports (en0, en1, …) are asked first.
+    Inside Docker the container can't see the host's address, so CJ_HOST_IP sets it."""
+    return os.environ.get("CJ_HOST_IP") or _wifi_ip() or _route_ip()
 
 
 def _wifi_ip() -> str:

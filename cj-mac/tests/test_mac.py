@@ -150,3 +150,9 @@ def test_single_noise_words_are_ignored():
     from cj.modes.assistant import _noise
     assert _noise("battery") and _noise("like")
     assert not _noise("yes") and not _noise("हाँ") and not _noise("open spotify")
+
+
+def test_mac_commands_explain_themselves_off_a_mac(monkeypatch):
+    monkeypatch.setattr(mac.shutil, "which", lambda name: None)  # Linux or a NAS: no osascript
+    with pytest.raises(mac.MacError, match="Mac"):
+        mac._run(["osascript", "-e", "beep"])
