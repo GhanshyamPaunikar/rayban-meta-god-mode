@@ -11,10 +11,6 @@ puts Netflix on the TV, switches off the lights and ships your code while your p
 **[Download the Android app](https://github.com/GhanshyamPaunikar/rayban-meta-god-mode/releases/latest/download/CJ.apk)**
 · [Get started](#get-started) · [What you can say](#what-you-can-say) · [How it works](#how-it-works)
 
-<a href="https://github.com/user-attachments/assets/209be191-8335-47b7-8cf4-51cdab4d2a05"><img src="https://github.com/user-attachments/assets/44b3a886-a520-4ebc-ba0e-47c79b7c0d6e" width="100%" alt="CJ in action"/></a>
-
-Full film with sound:
-
 https://github.com/user-attachments/assets/209be191-8335-47b7-8cf4-51cdab4d2a05
 
 <p>
