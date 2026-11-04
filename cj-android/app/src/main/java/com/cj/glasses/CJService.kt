@@ -53,6 +53,10 @@ class CJService : Service() {
     @Volatile private var liveOffUntil = 0L
     private var focus: AudioFocusRequest? = null
     private val talkNow = Channel<Unit>(Channel.CONFLATED)
+    private val taskNow = Channel<Unit>(Channel.CONFLATED)  // a task typed in the app (Core.phoneTask) is waiting
+    private val sosNow = Channel<Unit>(Channel.CONFLATED)  // SOS tapped in the app or the notification
+    private val sosCancel = Channel<Unit>(Channel.CONFLATED)
+    @Volatile private var sosRequested = false
     private val beep by lazy { ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80) }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -83,6 +87,12 @@ class CJService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
         if (intent?.action == ACTION_TALK) talkNow.trySend(Unit)
+        if (intent?.action == ACTION_SOS) sosNow.trySend(Unit)
+        if (intent?.action == ACTION_SOS_CANCEL) sosCancel.trySend(Unit)
+        if (intent?.action == ACTION_TASK) {
+            Trail.log("task: typed request waiting (${Core.phoneTask?.app ?: "none"})")
+            taskNow.trySend(Unit)
+        }
         if (loop == null) loop = scope.launch { run() }
         running = true
         Core.handsFree = true
@@ -102,7 +112,20 @@ class CJService : Service() {
             setStatus(idleStatus())
             stream.drain()
             if (!waitForWakeOrTap()) continue
-            converse()
+            if (sosRequested) {
+                sosRequested = false
+                conversing = true
+                try { sos() } finally { conversing = false }
+                continue
+            }
+            val task = Core.phoneTask
+            if (task == null) converse() else {
+                Trail.log("task: running ${task.app}: ${task.goal}")
+                // Typed in the app ("reorder my usual from Swiggy"): run it like a spoken request would be.
+                Core.phoneTask = null
+                conversing = true
+                try { runTask(task) } finally { conversing = false }
+            }
         }
     }
 
@@ -293,9 +316,13 @@ class CJService : Service() {
             }
         }
         val tapped = async { talkNow.receive(); true }
-        val result = select { heard.onAwait { it }; tapped.onAwait { it } }
+        val tasked = async { taskNow.receive(); true }
+        val sos = async { sosNow.receive(); sosRequested = true; true }
+        val result = select { heard.onAwait { it }; tapped.onAwait { it }; tasked.onAwait { it }; sos.onAwait { it } }
         heard.cancel()
         tapped.cancel()
+        tasked.cancel()
+        sos.cancel()
         result
     }
 
@@ -368,6 +395,7 @@ class CJService : Service() {
             Core.pendingCall?.let { Core.pendingCall = null; Core.call(it); return }
             when (end) {
                 LiveEnd.Bye -> return
+                LiveEnd.Sos -> { sos(); return }
                 LiveEnd.Stop -> { stopSelf(); return }
                 is LiveEnd.Dictation -> takeNotes(end.session)
                 is LiveEnd.Translate -> translate(end.language)
@@ -398,16 +426,26 @@ class CJService : Service() {
         val agent = AgentService.instance
         val brain = Core.brain() ?: return
         if (agent == null) {
+            Trail.log("task: phone agent not connected")
             say("To do things in apps, turn on CJ phone agent in your phone's Accessibility settings first.")
             return
         }
         val power = getSystemService(android.os.PowerManager::class.java)
         val lock = getSystemService(android.app.KeyguardManager::class.java)
         if (!power.isInteractive || lock.isKeyguardLocked) {
+            Trail.log("task: waiting for the phone to be unlocked")
             say("Unlock your phone and I'll start.")
             if (withTimeoutOrNull(30_000) { while (!power.isInteractive || lock.isKeyguardLocked) delay(500) } == null) return
         }
-        if (!agent.open(task.packageName, task.link) && task.packageName.isNotBlank()) {
+        if (task.packageName.isBlank() && task.link.isBlank()) {
+            // The brain found no such app on this phone: say so, don't start tapping on whatever is on screen.
+            Trail.log("task: no app for \"${task.app}\"")
+            say(task.note.ifBlank { "I can't find ${task.app.ifBlank { "that app" }} on your phone." })
+            return
+        }
+        if (task.note.isNotBlank()) say(task.note)
+        if (!agent.open(task.packageName, task.link)) {
+            Trail.log("task: couldn't open ${task.packageName}")
             say("I couldn't open ${task.app}. Is it installed?")
             return
         }
@@ -513,8 +551,13 @@ class CJService : Service() {
             val (heard, spoken) = try {
                 Core.askSpoken(wav)
             } catch (e: BrainException) {
+                // No brain to hear it: "help" still works, recognised on the phone.
+                if (Core.store.sosOn && wake.helpIn(wav)) return sos()
                 "?" to (e.message ?: "I couldn't reach my brain on the laptop.")
             }
+            if (Sos.wanted(heard)) return sos()
+            // Heard nothing or a word or two: check the recording on the phone too, in case it was "help".
+            if (Core.store.sosOn && heard.split(" ").size <= 2 && wake.helpIn(wav)) return sos()
             if (heard.isEmpty()) continue  // background noise, not speech: stay quiet and keep listening
             if (wantsStop(heard)) {
                 say("Okay, CJ is going quiet.")
@@ -576,6 +619,55 @@ class CJService : Service() {
     }
 
     /** Speaks, then drops whatever the mic picked up of CJ's own voice. */
+    /**
+     * "CJ, help": a countdown you can cancel by voice ("cancel", "stop") or with Cancel in the app or the
+     * notification, then a text with your location and a call to your SOS contact. All on the phone.
+     */
+    private suspend fun sos() {
+        Trail.log("sos: started")
+        if (!Sos.ready()) {
+            sayNow("SOS isn't set up yet. Choose a contact in Setup, under Accessibility.")
+            return
+        }
+        val name = Core.store.sosName.ifBlank { "your contact" }
+        while (sosCancel.tryReceive().isSuccess) Unit
+        Core.sosCountdown = true
+        var cancelled = false
+        try {
+            setStatus("SOS to $name in a few seconds")
+            sayNow("Sending SOS to $name in five seconds. Say cancel to stop.")
+            coroutineScope {
+                val voice = launch { if (wake.hears(stream.frames, CANCEL_WORDS, SOS_WAIT_MS)) cancelled = true }
+                val tap = launch { sosCancel.receive(); cancelled = true }
+                val until = System.currentTimeMillis() + SOS_WAIT_MS
+                while (!cancelled && System.currentTimeMillis() < until) delay(100)
+                voice.cancel()
+                tap.cancel()
+            }
+        } finally {
+            Core.sosCountdown = false
+        }
+        if (cancelled) {
+            Trail.log("sos: cancelled")
+            sayNow("Okay, SOS cancelled.")
+            return
+        }
+        val texted = Sos.sendText(this)
+        if (Core.store.sosCall) {
+            sayNow("$texted Calling $name now.".trim())
+            Core.call(Core.store.sosNumber)
+        } else {
+            sayNow(texted.ifBlank { "SOS has nothing to do: turn on texting or calling in Setup." })
+        }
+    }
+
+    /** The phone's own voice, straight away: SOS mustn't wait on the brain for CJ's voice. */
+    private suspend fun sayNow(text: String) {
+        setStatus(text)
+        Core.speaker.say(text)
+        stream.drain()
+    }
+
     private suspend fun say(text: String) {
         setStatus("Speaking…")
         Core.speak(text)
@@ -597,8 +689,15 @@ class CJService : Service() {
             .setContentText(text)
             .setContentIntent(open)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, "Talk", action(ACTION_TALK, 1)).build())
-            .addAction(Notification.Action.Builder(null, "Stop", action(ACTION_STOP, 2)).build())
+            .apply {
+                if (Core.sosCountdown) {
+                    addAction(Notification.Action.Builder(null, "Cancel SOS", action(ACTION_SOS_CANCEL, 4)).build())
+                    return@apply
+                }
+                addAction(Notification.Action.Builder(null, "Talk", action(ACTION_TALK, 1)).build())
+                addAction(Notification.Action.Builder(null, "Stop", action(ACTION_STOP, 2)).build())
+                if (Core.store.sosOn) addAction(Notification.Action.Builder(null, "SOS", action(ACTION_SOS, 3)).build())
+            }
             .build()
     }
 
@@ -621,6 +720,11 @@ class CJService : Service() {
         private val YES = Regex("(?i)\\b(yes|yeah|yep|sure|ok(ay)?|go ahead|do it|haan|ha|kar do|confirm|book it|order it|pay)\\b")
         const val ACTION_TALK = "com.cj.glasses.TALK"
         const val ACTION_STOP = "com.cj.glasses.STOP"
+        const val ACTION_TASK = "com.cj.glasses.TASK"
+        const val ACTION_SOS = "com.cj.glasses.SOS"
+        const val ACTION_SOS_CANCEL = "com.cj.glasses.SOS_CANCEL"
+        private const val SOS_WAIT_MS = 6_000L
+        private val CANCEL_WORDS = listOf("cancel", "stop", "no", "wait", "ruko")
 
         @Volatile var running = false
             private set
@@ -629,6 +733,20 @@ class CJService : Service() {
             val intent = Intent(context, CJService::class.java)
             if (talk) intent.action = ACTION_TALK
             context.startForegroundService(intent)
+        }
+
+        /** Runs the phone task a typed request left in Core.phoneTask (starting hands-free if it's off). */
+        fun runTypedTask(context: Context) {
+            context.startForegroundService(Intent(context, CJService::class.java).setAction(ACTION_TASK))
+        }
+
+        /** Starts the SOS countdown (starting hands-free if it's off, so you can still cancel by voice). */
+        fun sos(context: Context) {
+            context.startForegroundService(Intent(context, CJService::class.java).setAction(ACTION_SOS))
+        }
+
+        fun cancelSos(context: Context) {
+            context.startService(Intent(context, CJService::class.java).setAction(ACTION_SOS_CANCEL))
         }
 
         fun stop(context: Context) {

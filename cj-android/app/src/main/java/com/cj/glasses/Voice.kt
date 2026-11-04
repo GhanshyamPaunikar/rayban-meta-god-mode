@@ -77,10 +77,12 @@ class Speaker(context: Context) {
             .setTransferMode(AudioTrack.MODE_STATIC)
             .setBufferSizeInBytes(pcm.size)
             .build()
+        val speed = Core.store.speechSpeed
         try {
+            track.playbackParams = track.playbackParams.setSpeed(speed)  // Setup → Accessibility; pitch stays the same
             track.write(pcm, 0, pcm.size)
             track.play()
-            delay(pcm.size / 2 * 1000L / rate + 150)
+            delay((pcm.size / 2 * 1000L / rate / speed).toLong() + 150)
         } finally {
             track.stop()
             track.release()
@@ -91,6 +93,7 @@ class Speaker(context: Context) {
         if (!ready || text.isBlank()) return
         val hindi = text.any { it in 'ऀ'..'ॿ' }
         tts.language = if (hindi) Locale("hi", "IN") else Locale("en", "IN")
+        tts.setSpeechRate(Core.store.speechSpeed)
         tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id)
     }
 
@@ -124,7 +127,7 @@ class GlassesMic(context: Context) {
 
     private fun headset(): AudioDeviceInfo? =
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) null
-        else audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+        else glassesFirst(audio.availableCommunicationDevices)
 
     fun connected(): Boolean = headset() != null
 
@@ -137,8 +140,7 @@ class GlassesMic(context: Context) {
             audio.communicationDevice?.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO
 
     /** The glasses as a recording input, for AudioRecord.setPreferredDevice. */
-    fun inputDevice(): AudioDeviceInfo? =
-        audio.getDevices(AudioManager.GET_DEVICES_INPUTS).firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+    fun inputDevice(): AudioDeviceInfo? = glassesFirst(audio.getDevices(AudioManager.GET_DEVICES_INPUTS).toList())
 
     /** Returns true when listening now goes through the glasses. */
     fun route(): Boolean {
@@ -150,6 +152,19 @@ class GlassesMic(context: Context) {
     fun release() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) audio.clearCommunicationDevice()
         audio.mode = AudioManager.MODE_NORMAL
+    }
+
+    companion object {
+        /**
+         * The glasses among the Bluetooth headsets. With a speaker, headphones or a car also connected, the first
+         * one Android lists can be any of them, and CJ would listen through a mic you're not wearing.
+         */
+        fun glassesFirst(devices: List<AudioDeviceInfo>): AudioDeviceInfo? {
+            val headsets = devices.filter { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+            return headsets.firstOrNull { isGlasses(it.productName?.toString().orEmpty()) } ?: headsets.firstOrNull()
+        }
+
+        fun isGlasses(name: String) = Regex("""(?i)\bmeta\b|ray-?ban|^rb\b""").containsMatchIn(name)
     }
 }
 

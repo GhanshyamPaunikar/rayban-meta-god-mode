@@ -35,6 +35,7 @@ sealed class LiveEnd {
     data class Translate(val language: String) : LiveEnd()
     data class Task(val task: PhoneTask) : LiveEnd()
     data class Failed(val why: String) : LiveEnd()
+    data object Sos : LiveEnd()  // "CJ, help": the SOS countdown starts (Sos.kt)
 }
 
 /**
@@ -71,7 +72,8 @@ class LiveSession(private val context: Context, private val stream: MicStream, p
         if (!opened.await()) return@coroutineScope LiveEnd.Failed("couldn't reach the brain")
         val history = JSONArray().apply { Core.log.takeLast(8).forEach { put(JSONObject().put("role", it.role).put("text", it.text)) } }
         ws.send(JSONObject().put("type", "start").put("mode", mode).put("history", history).put("language", language)
-            .put("user_language", "English").apply {
+            .put("user_language", "English").put("access", Core.store.access())
+            .put("apps", InstalledApps.json(Core.app)).apply {
                 Core.place()?.let { put("location", JSONObject().put("lat", it.lat).put("lon", it.lon)) }
             }.toString())
 
@@ -131,7 +133,17 @@ class LiveSession(private val context: Context, private val stream: MicStream, p
                             Trail.log("live: stopped by \"${overTalk.trim()}\"")
                         }
                     }
-                    "said" -> lastActivity = now
+                    "said" -> {
+                        lastActivity = now
+                        // CJ starts answering, so your turn is over: a call for help starts SOS now, not after the answer.
+                        if (mode == "assistant" && com.cj.glasses.Sos.wanted(heard.toString())) {
+                            silenced = true
+                            out?.run { pause(); flush(); play() }
+                            while (audio.tryReceive().isSuccess) Unit
+                            playingUntil = 0
+                            result = LiveEnd.Sos
+                        }
+                    }
                     "interrupted" -> {
                         out?.run { pause(); flush(); play() }
                         while (audio.tryReceive().isSuccess) Unit
@@ -163,7 +175,7 @@ class LiveSession(private val context: Context, private val stream: MicStream, p
                         "dictation" -> nextStep = LiveEnd.Dictation(e.optString("session"))
                         "translate" -> nextStep = LiveEnd.Translate(e.optString("language"))
                         "phone_task" -> nextStep = LiveEnd.Task(PhoneTask(e.optString("goal"), e.optString("package"),
-                            e.optString("link"), e.optString("app")))
+                            e.optString("link"), e.optString("app"), e.optString("note")))
                     }
                     "turn_done" -> {
                         silenced = false  // the next answer plays normally
@@ -175,6 +187,7 @@ class LiveSession(private val context: Context, private val stream: MicStream, p
                             if (said.isNotBlank()) Core.log.add(Turn("user", said))
                             e.optString("said").takeIf { it.isNotBlank() }?.let { Core.log.add(Turn("assistant", it)) }
                             when {
+                                com.cj.glasses.Sos.wanted(said) -> result = LiveEnd.Sos
                                 wantsStop(said) -> result = LiveEnd.Stop
                                 wantsBye(said) -> result = LiveEnd.Bye
                                 Core.pendingCall != null -> result = LiveEnd.Bye  // the call takes the audio
@@ -219,6 +232,7 @@ class LiveSession(private val context: Context, private val stream: MicStream, p
         val size = AudioTrack.getMinBufferSize(OUT_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT) * 4
         return AudioTrack.Builder().setAudioAttributes(attributes).setAudioFormat(format)
             .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(size).build().apply {
+                playbackParams = playbackParams.setSpeed(Core.store.speechSpeed)  // Setup → Accessibility
                 if (speaker) {
                     context.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_OUTPUTS)
                         .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }?.let { preferredDevice = it }

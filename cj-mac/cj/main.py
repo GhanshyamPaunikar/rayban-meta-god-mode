@@ -12,7 +12,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, WebSocket, WebSocke
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
 
-from . import coder, prefs, beacon, live, recall, notes, nudges, phone_agent, lookups, tts
+from . import access, coder, prefs, beacon, live, recall, notes, nudges, phone_agent, lookups, tts
+from .access import Access
 from .events import bus
 from .llm.provider import Attachment
 from .llm import spend
@@ -65,6 +66,8 @@ class AskIn(BaseModel):
     audio_mime: str = "audio/wav"
     voice: bool = False  # also return the answer as speech (voice_b64 in the reply)
     location: Location | None = None  # the phone's position, for "how long to reach…"
+    access: Access | None = None  # Setup → Accessibility on the phone
+    apps: list[dict] | None = Field(default=None, max_length=400)  # the phone's installed apps, {label, package}
 
     @model_validator(mode="after")
     def text_or_audio(self):
@@ -83,6 +86,8 @@ async def ask(body: AskIn):
     started = time.monotonic()
     history = [t.model_dump() for t in body.history]
     lookups.LOCATION.set(body.location.model_dump(exclude_none=True) if body.location else None)
+    access.SETTINGS.set(body.access.model_dump() if body.access else None)
+    phone_agent.remember_apps(body.apps)
     try:
         if body.audio_b64 and not body.text.strip():
             out = await assistant.ask_spoken(Attachment(body.audio_b64, body.audio_mime), history)

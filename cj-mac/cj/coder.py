@@ -7,6 +7,8 @@ it runs `claude -p` in that project in the background. When the job finishes, th
 Guard rails:
 - Projects are only git repositories in your usual code folders (CODE_DIRS), matched by name.
 - Claude Code may read and edit files, and run read-only git commands. No other shell commands.
+- Only when you ask it to ship, push or commit ("fix the login bug and ship it") may it also commit and push.
+  Never a force push, and the spoken "Ask Claude Code to ...?" confirmation still comes first.
 - One job per project at a time; each job stops after JOB_TIMEOUT.
 """
 from __future__ import annotations
@@ -25,6 +27,9 @@ from .events import bus
 
 CODE_DIRS = ["~/Documents", "~/Developer", "~/Projects", "~/code", "~/src"]
 ALLOWED_TOOLS = "Read Edit Write Glob Grep Bash(git status) Bash(git diff:*) Bash(git log:*)"
+SHIP_TOOLS = "Bash(git add:*) Bash(git commit:*) Bash(git push) Bash(git push origin:*)"
+DENIED_TOOLS = "Bash(git push --force:*) Bash(git push -f:*) Bash(git push origin --force:*) Bash(git push origin -f:*)"
+SHIP = re.compile(r"(?i)\b(ship|push|commit|deploy)\b")
 JOB_TIMEOUT = 20 * 60
 
 
@@ -62,10 +67,21 @@ def projects() -> dict[str, str]:
         base = os.path.expanduser(d)
         if not os.path.isdir(base):
             continue
+        # Two levels: "Documents/achievements-test" and "Documents/Github manager/achievements-test".
         for name in sorted(os.listdir(base)):
             path = os.path.join(base, name)
+            if not os.path.isdir(path) or name.startswith("."):
+                continue
             if os.path.isdir(os.path.join(path, ".git")):
                 found.setdefault(name, path)
+                continue
+            try:
+                inner = sorted(os.listdir(path))
+            except OSError:
+                continue
+            for sub in inner:
+                if os.path.isdir(os.path.join(path, sub, ".git")):
+                    found.setdefault(sub, os.path.join(path, sub))
     return found
 
 
@@ -92,8 +108,9 @@ def _summary(result: str) -> str:
 
 
 def _run(job: Job, cont: bool) -> None:
+    tools = ALLOWED_TOOLS + (" " + SHIP_TOOLS if SHIP.search(job.task) else "")
     args = [claude_bin(), "-p", job.task, "--output-format", "json", "--permission-mode", "acceptEdits",
-            "--allowedTools", ALLOWED_TOOLS]
+            "--allowedTools", tools, "--disallowedTools", DENIED_TOOLS]
     if cont:
         args.append("--continue")
     try:

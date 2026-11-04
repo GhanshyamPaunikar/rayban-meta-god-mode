@@ -24,7 +24,8 @@ data class SpokenAnswer(val heard: String, val needsPhoto: Boolean, val spoken: 
                         val call: String? = null, val visualMemory: Boolean? = null, val translate: String? = null,
                         val task: PhoneTask? = null)
 data class Place(val lat: Double, val lon: Double, val accuracy: Float? = null)
-data class PhoneTask(val goal: String, val packageName: String, val link: String, val app: String)
+/** [note]: what to tell you first, e.g. "Zomato isn't on your phone, so I'm using Swiggy." */
+data class PhoneTask(val goal: String, val packageName: String, val link: String, val app: String, val note: String = "")
 /** One chunk of "start taking notes": what was heard, and once you say "stop taking notes", the summary. */
 data class NotesChunk(val heard: String, val stopped: Boolean, val spoken: String, val voice: ByteArray? = null)
 
@@ -76,7 +77,8 @@ class BrainClient(private val pairing: Pairing) {
         val past = JSONArray().apply {
             history.takeLast(8).forEach { put(JSONObject().put("role", it.role).put("text", it.text)) }
         }
-        val body = JSONObject().put("text", text).put("history", past).put("voice", true)
+        val body = JSONObject().put("text", text).put("history", past).put("voice", true).put("access", Core.store.access())
+            .put("apps", InstalledApps.json(Core.app))
         if (imageJpegBase64 != null) body.put("image_b64", imageJpegBase64).put("mime", "image/jpeg")
         val r = call("POST", "/api/ask", body.at(place))
         return Answer(r.getString("spoken"), r.optString("details"), r.optString("language", "en"), voiceOf(r), timerOf(r),
@@ -90,7 +92,8 @@ class BrainClient(private val pairing: Pairing) {
         }
         val r = call("POST", "/api/ask", JSONObject()
             .put("audio_b64", Base64.encodeToString(wav, Base64.NO_WRAP)).put("audio_mime", "audio/wav")
-            .put("history", past).put("voice", true).at(place))
+            .put("history", past).put("voice", true).put("access", Core.store.access())
+            .put("apps", InstalledApps.json(Core.app)).at(place))
         return SpokenAnswer(r.optString("heard"), r.optBoolean("needs_photo"), r.optString("spoken"), r.optString("details"),
             voiceOf(r), timerOf(r), r.optString("dictation").takeIf { it.isNotEmpty() && it != "null" }, callOf(r), visualMemoryOf(r), translateOf(r), phoneTaskOf(r))
     }
@@ -146,7 +149,8 @@ class BrainClient(private val pairing: Pairing) {
     /** "Book me an Uber home": the task, when the brain handed one to the phone. */
     fun phoneTaskOf(r: JSONObject): PhoneTask? = r.optJSONObject("phone")
         ?.takeIf { it.optString("action") == "phone_task" }
-        ?.let { PhoneTask(it.optString("goal"), it.optString("package"), it.optString("link"), it.optString("app")) }
+        ?.let { PhoneTask(it.optString("goal"), it.optString("package"), it.optString("link"), it.optString("app"),
+            it.optString("note")) }
 
     /** A number to call, sent once the user said yes to "Call …?". */
     private fun callOf(r: JSONObject): String? = r.optJSONObject("phone")

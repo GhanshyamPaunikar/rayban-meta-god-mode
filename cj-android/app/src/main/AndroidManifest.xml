@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    <!-- SOS (Sos.kt): texts your chosen contact a map link to where you are. Asked only when you turn SOS on. -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Glasses: the wearables SDK talks to them over Bluetooth; MODIFY_AUDIO_SETTINGS routes the mic to them. -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -19,12 +21,33 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Asked on the first-launch screens so Android doesn't close hands-free CJ to save battery. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Needed so SpeechRecognizer.isRecognitionAvailable() can see the phone's speech service. -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+        <!-- The apps in the app drawer (Apps.kt), so "open my calendar" works for whatever is installed. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- The apps the phone agent can open (cj-mac/cj/phone_agent.py). Since Android 11 an app can't see or
+             launch other apps unless they're listed here: without this, "order on Swiggy" couldn't open Swiggy. -->
+        <package android:name="com.ubercab" />
+        <package android:name="com.olacabs.customer" />
+        <package android:name="com.rapido.passenger" />
+        <package android:name="in.swiggy.android" />
+        <package android:name="com.application.zomato" />
+        <package android:name="com.grofers.customerapp" />
+        <package android:name="com.zeptoconsumerapp" />
+        <package android:name="in.amazon.mShop.android.shopping" />
+        <package android:name="com.whatsapp" />
+        <package android:name="com.google.android.apps.maps" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.spotify.music" />
     </queries>
 
     <!-- usesCleartextTraffic: the brain runs on your own Wi-Fi over plain HTTP for now; HTTPS or Tailscale comes later. -->

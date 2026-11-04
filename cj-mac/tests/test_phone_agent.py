@@ -100,11 +100,49 @@ def test_sending_a_message_also_waits_for_yes(monkeypatch):
 
 
 
-@pytest.mark.parametrize("label,asks", [("Confirm pickup", False), ("Confirm Pickup Location", False), ("Send OTP", False),
-                                        ("Confirm booking", True), ("Request Uber Go", True), ("Proceed to Pay", True)])
+@pytest.mark.parametrize("label,asks", [("Confirm Location", False), ("Send OTP", False), ("Choose Uber Go AC", False),
+                                        ("Confirm pick-up", True), ("Confirm pickup", True), ("Confirm booking", True),
+                                        ("Request Uber Go", True), ("Proceed to Pay", True)])
 def test_only_committing_steps_need_a_yes(monkeypatch, label, asks):
     async def fake(task, system, messages, image=None):
         return {"do": "tap", "n": 1}, ""
     monkeypatch.setattr(phone_agent, "ask_json", fake)
     out = asyncio.run(phone_agent.step("book an uber", [{"n": 1, "kind": "button", "text": label, "clickable": True}], []))
     assert (out["do"] == "confirm") is asks
+
+
+def test_the_models_own_flag_asks_first_whatever_the_button_says(monkeypatch):
+    """Buttons are named many ways; the model also marks taps that commit, and that alone asks for a yes."""
+    async def fake(task, system, messages, image=None):
+        return {"do": "tap", "n": 1, "commits": True}, ""
+    monkeypatch.setattr(phone_agent, "ask_json", fake)
+    screen = [{"n": 1, "kind": "button", "text": "Choose Uber Go AC", "clickable": True}, {"n": 2, "kind": "text", "text": "₹314.03"}]
+    out = asyncio.run(phone_agent.step("book an uber", screen, []))
+    assert out["do"] == "confirm" and out["say"] == "Choose Uber Go AC, ₹314.03. Should I?"
+
+
+def test_apps_come_from_what_the_phone_has():
+    from cj import phone_agent
+    phone_agent.remember_apps([{"label": "Calendar", "package": "com.samsung.android.calendar"},
+                               {"label": "Swiggy", "package": "in.swiggy.android"},
+                               {"label": "Uber", "package": "com.ubercab"}])
+    try:
+        cal = phone_agent.start("calendar")
+        assert cal["package"] == "com.samsung.android.calendar" and not cal["note"]
+        # Zomato isn't installed: same job, the app they have.
+        food = phone_agent.start("zomato")
+        assert food["package"] == "in.swiggy.android" and "Swiggy" in food["note"]
+        assert phone_agent.start("Swiggy")["package"] == "in.swiggy.android"
+        ride = phone_agent.start("uber", "Pune Airport")
+        assert ride["package"] == "com.ubercab" and "Pune%20Airport" in ride["link"]
+        assert phone_agent.start("ola")["package"] == "com.ubercab"
+        missing = phone_agent.start("instagram")
+        assert missing["package"] == "" and "can't find" in missing["note"]
+        assert "Calendar" in phone_agent.prompt() and "Swiggy" in phone_agent.prompt()
+        assert phone_agent.reply("open Calendar", cal) == "Opening Calendar."
+        assert phone_agent.reply("order sushi", food).startswith("Zomato isn't on your phone, so I'm using Swiggy. On it")
+        assert phone_agent.reply("open Instagram", missing) == "I can't find instagram on your phone."
+    finally:
+        phone_agent.INSTALLED.clear()
+    # Without a list from the phone, the known apps still work as before.
+    assert phone_agent.start("swiggy")["package"] == "in.swiggy.android"

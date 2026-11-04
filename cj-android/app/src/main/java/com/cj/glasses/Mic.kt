@@ -78,7 +78,8 @@ class MicStream(private val mic: GlassesMic) {
      * Records one question: waits up to [waitForSpeechMs] for speech, then stops after 0.8 s of quiet
      * (or 15 s). Returns a WAV clip, or null when nobody spoke.
      */
-    suspend fun recordQuestion(waitForSpeechMs: Int, maxMs: Int = MAX_MS, endSilenceMs: Int = END_SILENCE_MS): ByteArray? {
+    suspend fun recordQuestion(waitForSpeechMs: Int, maxMs: Int = MAX_MS,
+                               endSilenceMs: Int = if (Core.store.slowSpeech) SLOW_END_SILENCE_MS else END_SILENCE_MS): ByteArray? {
         val pcm = ByteArrayOutputStream()
         val start = maxOf(noiseFloor * 3, 250.0)
         val keep = maxOf(noiseFloor * 1.8, 180.0)
@@ -131,6 +132,7 @@ class MicStream(private val mic: GlassesMic) {
         private const val FRAME = 2048
         private const val MAX_MS = 15_000
         private const val END_SILENCE_MS = 1_100  // 0.8 s cut people off mid-thought; 1.4 s felt slow
+        private const val SLOW_END_SILENCE_MS = 2_500  // Setup → Accessibility → Slow speech
         private const val MIN_SPEECH_MS = 350  // shorter bursts are clicks and rustles, not words
         private const val TAG = "MicStream"
 

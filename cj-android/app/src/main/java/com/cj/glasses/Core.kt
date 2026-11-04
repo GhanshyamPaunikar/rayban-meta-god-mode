@@ -41,11 +41,14 @@ object Core {
     var status by mutableStateOf<String?>(null)
     /** True while the hands-free service is running. */
     var handsFree by mutableStateOf(false)
+    /** True during the SOS countdown, so the app can show Cancel. */
+    var sosCountdown by mutableStateOf(false)
 
     /** Running timers ("remind me in 10 minutes…"), shown on the Talk screen. */
     val timers = mutableStateListOf<TimerItem>()
 
-    private lateinit var app: Context
+    lateinit var app: Context
+        private set
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var cached: Pair<Pairing, BrainClient>? = null
     private var pendingVoice: Pair<String, ByteArray>? = null

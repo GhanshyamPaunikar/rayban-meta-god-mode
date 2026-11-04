@@ -7,6 +7,7 @@ import kotlinx.coroutines.channels.ReceiveChannel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import org.vosk.Model
@@ -60,7 +61,50 @@ class Hotword(private val context: Context) {
         }
     }
 
+    /**
+     * Listens up to [ms] for one of [words] ("cancel", "stop"), on the phone, so it works without the brain.
+     * Only settled, confident words count: a cough mustn't cancel an SOS.
+     */
+    suspend fun hears(frames: ReceiveChannel<ShortArray>, words: List<String>, ms: Long): Boolean {
+        val model = load()
+        return withTimeoutOrNull(ms) {
+            withContext(Dispatchers.Default) {
+                Recognizer(model, MicStream.RATE.toFloat(), JSONArray(words + "[unk]").toString()).use { recognizer ->
+                    recognizer.setWords(true)
+                    while (isActive) {
+                        val frame = frames.receive()
+                        if (recognizer.acceptWaveForm(frame, frame.size) &&
+                            settled(recognizer.result).any { it.word in words && (it.confidence ?: 0.0) >= 0.6 }) return@use true
+                    }
+                    false
+                }
+            }
+        } ?: false
+    }
+
+    /**
+     * Whether a recorded question (a WAV clip) was a call for help, heard on the phone. A second opinion for when
+     * the brain can't be reached or heard almost nothing (the glasses cut short words, and "help" once came back
+     * as "bye").
+     */
+    suspend fun helpIn(wav: ByteArray): Boolean {
+        if (wav.size <= 44) return false
+        val model = load()
+        return withContext(Dispatchers.Default) {
+            Recognizer(model, MicStream.RATE.toFloat(), HELP_GRAMMAR).use { recognizer ->
+                recognizer.setWords(true)
+                recognizer.acceptWaveForm(wav.copyOfRange(44, wav.size), wav.size - 44)
+                // Other words come back as [unk]; what's left must be a clear call for help.
+                val words = settled(recognizer.finalResult).filter { it.word != "[unk]" }
+                words.any { it.word in setOf("help", "emergency") && (it.confidence ?: 0.0) >= 0.7 } &&
+                    Sos.wanted(words.joinToString(" ") { it.word })
+            }
+        }
+    }
+
     companion object {
+        private val HELP_GRAMMAR = JSONArray(listOf("help", "help me", "s o s", "emergency", "please", "[unk]")).toString()
+
         private fun settled(json: String): List<Heard> {
             val result = JSONObject(json).optJSONArray("result") ?: return emptyList()
             return (0 until result.length()).map { result.getJSONObject(it) }

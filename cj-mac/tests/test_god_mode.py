@@ -120,6 +120,23 @@ def test_claude_code_may_not_run_shell_commands():
     assert "Bash " not in coder.ALLOWED_TOOLS + " " and "Bash(*" not in coder.ALLOWED_TOOLS
 
 
+def test_projects_one_folder_down_are_found(projects):
+    (projects / "Github manager " / "achievements-test" / ".git").mkdir(parents=True)
+    assert coder.find_project("achievements test")[0] == "achievements-test"
+
+
+def test_claude_code_pushes_only_when_asked_and_never_forces(projects, monkeypatch):
+    seen = []
+    monkeypatch.setattr(coder.subprocess, "run", lambda args, **kw: seen.append(args) or
+                        type("Done", (), {"stdout": '{"result": "ok"}', "stderr": "", "returncode": 0})())
+    for task in ("fix the login bug", "fix the login bug and ship it"):
+        coder._run(coder.Job(id="t", task=task, project="p", path=str(projects)), cont=False)
+    edit_only, ship = (a[a.index("--allowedTools") + 1] for a in seen)
+    assert "git push" not in edit_only and "git commit" not in edit_only
+    assert "Bash(git push)" in ship and "Bash(git commit:*)" in ship
+    assert all("--force" in a[a.index("--disallowedTools") + 1] for a in seen)
+
+
 # ---- Code help ----------------------------------------------------------------------------------------------
 
 def test_code_help_reads_the_screen(monkeypatch):

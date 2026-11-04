@@ -2,7 +2,6 @@ package com.cj.glasses
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -34,9 +33,6 @@ class HomeActivity : ComponentActivity(), GlassesControls {
         micResult?.invoke(granted)
         micResult = null
     }
-    private val startupPermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
-        if (result[Manifest.permission.BLUETOOTH_CONNECT] != false) Core.glasses.initialize()
-    }
     private var cameraResult: CancellableContinuation<Boolean>? = null
     private val glassesCameraPermission = registerForActivityResult(Wearables.RequestPermissionContract()) { result ->
         cameraResult?.resume(result.getOrDefault(PermissionStatus.Denied) == PermissionStatus.Granted)
@@ -48,29 +44,16 @@ class HomeActivity : ComponentActivity(), GlassesControls {
         super.onCreate(savedInstanceState)
         Core.init(this)
         listener = Listener(this)
-        askStartupPermissions()
+        initGlasses(this)  // permissions themselves are asked on the first-launch screens (Onboarding.kt)
         setContent { CJTheme { CJApp(Core.store, Core.speaker, listener, Core.glasses, this, ::withMic) } }
     }
 
     override fun onResume() {
         super.onResume()
         Core.place()  // remember where you are while CJ is open; the background service may not be told
+        Perms.tick++  // back from a settings page: re-check what's allowed now
     }
 
-    /** Bluetooth for the glasses SDK (Android 12+), notifications for hands-free (Android 13+), and location for travel times. */
-    private fun askStartupPermissions() {
-        val wanted = buildList {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                add(Manifest.permission.BLUETOOTH_CONNECT)
-                add(Manifest.permission.BLUETOOTH_SCAN)  // the glasses SDK loses them after the first photo without it
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
-            add(Manifest.permission.ACCESS_FINE_LOCATION)  // for "how long to reach…"
-            add(Manifest.permission.ACCESS_COARSE_LOCATION)
-            add(Manifest.permission.CALL_PHONE)  // "call this number", after you say yes
-        }.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
-        if (wanted.isEmpty()) Core.glasses.initialize() else startupPermissions.launch(wanted.toTypedArray())
-    }
 
     override fun register() = Wearables.startRegistration(this)
 

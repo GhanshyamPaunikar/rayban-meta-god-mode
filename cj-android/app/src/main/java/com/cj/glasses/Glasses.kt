@@ -151,7 +151,7 @@ class Glasses(private val context: Context) {
         } finally {
             if (device != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 audio.mode = AudioManager.MODE_IN_COMMUNICATION
-                val back = audio.availableCommunicationDevices.firstOrNull { it.type == AudioDeviceInfo.TYPE_BLUETOOTH_SCO }
+                val back = GlassesMic.glassesFirst(audio.availableCommunicationDevices)
                 if (back == null || !audio.setCommunicationDevice(back)) Trail.log("camera: call link didn't come back yet")
             }
             busy = false

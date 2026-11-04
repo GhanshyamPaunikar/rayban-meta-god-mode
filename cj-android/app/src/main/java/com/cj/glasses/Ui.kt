@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
@@ -104,6 +105,8 @@ fun CJApp(store: Store, speaker: Speaker, listener: Listener, glasses: Glasses, 
     var pairing by remember { mutableStateOf(store.pairing()) }
     val brain = remember(pairing) { pairing?.let { BrainClient(it) } }
     var tab by remember { mutableIntStateOf(if (pairing == null) 1 else 0) }
+    var onboarded by remember { mutableStateOf(store.onboarded) }
+    if (!onboarded) return Onboarding(glasses, controls) { store.onboarded = true; onboarded = true }
 
     Scaffold(containerColor = MaterialTheme.colorScheme.background, bottomBar = {
         NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
@@ -156,6 +159,7 @@ fun TalkScreen(brain: BrainClient?, speaker: Speaker, listener: Listener, glasse
                withMic: ((Boolean) -> Unit) -> Unit) {
     if (brain == null) return NeedPairing()
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val colors = MaterialTheme.colorScheme
     var input by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -174,6 +178,8 @@ fun TalkScreen(brain: BrainClient?, speaker: Speaker, listener: Listener, glasse
                     return@launch
                 }
                 Core.speak(Core.ask(text, look))
+                Trail.log("typed: ${text.take(60)} -> task ${Core.phoneTask?.app ?: "none"}")
+                if (Core.phoneTask != null) CJService.runTypedTask(context)
             } catch (e: GlassesException) {
                 error = e.message
             } catch (e: BrainException) {
@@ -203,6 +209,15 @@ fun TalkScreen(brain: BrainClient?, speaker: Speaker, listener: Listener, glasse
                     Text(Core.status ?: if (Core.handsFree) "Listening for \"CJ\"" else "Hands-free is off",
                         style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
                 }
+            }
+            if (Core.store.sosOn) {
+                // SOS (Setup → Accessibility). During the countdown the same button cancels it.
+                Button(onClick = {
+                    if (Core.sosCountdown) CJService.cancelSos(context) else withMic { ok -> if (ok) CJService.sos(context) }
+                }, colors = ButtonDefaults.buttonColors(containerColor = colors.error, contentColor = Color(0xFF1A0006))) {
+                    Text(if (Core.sosCountdown) "Cancel SOS" else "SOS", fontWeight = FontWeight.Black)
+                }
+                Spacer(Modifier.width(12.dp))
             }
             Column(horizontalAlignment = Alignment.End) {
                 Switch(checked = Core.handsFree, onCheckedChange = controls::setHandsFree)
@@ -273,7 +288,7 @@ fun TalkScreen(brain: BrainClient?, speaker: Speaker, listener: Listener, glasse
 }
 
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
+internal fun Section(title: String, content: @Composable () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(20.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -283,7 +298,7 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Hint(text: String) {
+internal fun Hint(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
@@ -291,7 +306,7 @@ private fun Hint(text: String) {
 private fun GlassesSection(glasses: Glasses, controls: GlassesControls) {
     val ready by glasses.ready.collectAsState()
     if (!ready) {
-        Hint("Allow Bluetooth for CJ (Android asks when the app opens) to use your glasses.")
+        Hint("Allow Bluetooth under Permissions above to use your glasses.")
         return
     }
     val registration by glasses.registration.collectAsState()
@@ -353,6 +368,10 @@ fun SetupScreen(store: Store, pairing: Pairing?, brain: BrainClient?, glasses: G
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("Setup", fontSize = 28.sp, fontWeight = FontWeight.Black)
+
+        Section("Permissions") {
+            PermissionList(glasses, controls)
+        }
 
         Section("Brain") {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -427,6 +446,8 @@ fun SetupScreen(store: Store, pairing: Pairing?, brain: BrainClient?, glasses: G
             }
             Hint("Say \"bye\" to end a conversation, \"stop listening\" to turn hands-free off. There's also a CJ tile in Quick Settings.")
         }
+
+        AccessibilitySection(store, glasses, controls)
 
         Hint("CJ · open source · not affiliated with Meta or Ray-Ban")
     }

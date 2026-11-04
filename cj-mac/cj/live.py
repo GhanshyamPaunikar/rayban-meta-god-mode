@@ -25,7 +25,8 @@ import re
 import websockets
 from fastapi import WebSocket, WebSocketDisconnect
 
-from . import prefs, mac, recall, notes, nudges, phone_agent, lookups
+from . import access, prefs, mac, recall, notes, nudges, phone_agent, lookups
+from .access import Access
 from .events import bus
 from .modes.common import persona
 
@@ -100,9 +101,10 @@ FUNCTIONS = [
         action={"type": "STRING", "enum": DEVICE}, args_json=_s('the action\'s args as a JSON object, e.g. {"app": "Spotify"}')),
     _fn("confirm_action", "The user's answer to a question a device action asked (e.g. 'Call Priya?').",
         yes={"type": "BOOLEAN"}),
-    _fn("phone_task", "Do something in an app on the user's phone (book a ride, order food, send a WhatsApp). "
-        "Payments and bookings are confirmed with the user on the phone first.",
-        goal=_s("what to do, in plain English"), app=_s("uber, ola, rapido, swiggy, zomato, blinkit, zepto, amazon, whatsapp, maps..."),
+    _fn("phone_task", "Do something in an app on the user's phone (book a ride, order food, send a WhatsApp), or just "
+        "open one (\"open my calendar on my phone\"). Payments and bookings are confirmed with the user on the phone first.",
+        goal=_s("what to do, in plain English"),
+        app=_s("the app's name: uber, swiggy, calendar... When the user names none, one they have"),
         destination=_s("for rides and maps; may be empty")),
     _fn("translate_start", "Start live translation with someone who speaks another language.",
         other_language=_s("their language, e.g. Spanish")),
@@ -135,7 +137,8 @@ class Bridge:
             tools_ = [{"functionDeclarations": [f for f in FUNCTIONS if f["name"] == "end_conversation"]}]
         else:
             history = "".join(f"\n{t.get('role')}: {t.get('text', '')[:300]}" for t in self.start.get("history", [])[-8:])
-            system = persona() + LIVE + recall.prompt() + (f"\nConversation so far:{history}" if history else "")
+            system = (persona() + LIVE + phone_agent.prompt() + recall.prompt()
+                      + (f"\nConversation so far:{history}" if history else "") + access.prompt())
             tools_ = [{"functionDeclarations": FUNCTIONS}]
         setup = {"model": f"models/{MODEL}",
                  "generationConfig": {"responseModalities": ["AUDIO"],
@@ -147,7 +150,8 @@ class Bridge:
                  # (they used to come back transcribed as some other language and got an answer).
                  "realtimeInputConfig": {"automaticActivityDetection": {
                      "startOfSpeechSensitivity": "START_SENSITIVITY_LOW",
-                     "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH", "silenceDurationMs": 500}},
+                     "endOfSpeechSensitivity": "END_SENSITIVITY_HIGH",
+                     "silenceDurationMs": 1500 if access.slow_speech() else 500}},  # slow speech: wait longer
                  "sessionResumption": {"handle": self.handle} if self.handle else {},
                  "contextWindowCompression": {"slidingWindow": {}}}
         return {"setup": setup}
@@ -344,10 +348,13 @@ class Bridge:
             await self._phone_action()
             return said or "Nothing was waiting for an answer."
         if name == "phone_task":
+            goal = str(a.get("goal", ""))[:300]
             start = phone_agent.start(str(a.get("app", "")), str(a.get("destination", "") or ""))
-            await self._event("phone", action="phone_task", goal=str(a.get("goal", ""))[:300], **start)
+            if not start["package"] and not start["link"]:
+                return f"Not started. Say only: {phone_agent.reply(goal, start)}"
+            await self._event("phone", action="phone_task", goal=goal, **{**start, "note": ""})
             self.ending = True
-            return "The phone is starting it. Say only: On it, I'll check with you before anything is paid."
+            return f"The phone is starting it. Say only: {phone_agent.reply(goal, start)}"
         if name == "translate_start":
             await self._event("phone", action="translate", language=str(a.get("other_language", "")))
             self.ending = True
@@ -409,6 +416,10 @@ class Bridge:
         self.mode = "interpreter" if self.start.get("mode") == "interpreter" else "assistant"
         loc = self.start.get("location")
         lookups.LOCATION.set(loc if isinstance(loc, dict) and "lat" in loc else None)
+        apps = self.start.get("apps")
+        phone_agent.remember_apps(apps if isinstance(apps, list) else None)
+        settings = self.start.get("access")
+        access.SETTINGS.set(Access.model_validate(settings).model_dump() if isinstance(settings, dict) else None)
         try:
             await self._connect()
         except Exception as e:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 
-from .. import mac, recall, notes, nudges, phone_agent, lookups
+from .. import access, mac, recall, notes, nudges, phone_agent, lookups
 from ..llm.provider import Attachment
 from ..llm.chain import router
 from .common import ask_json, persona
@@ -42,10 +42,10 @@ You also have live tools. When the question needs one, set "tool" to {"name": ..
   last day it matters (YYYY-MM-DD) for plans and appointments, else "".
 - timeline {hours}: what the glasses saw recently ("what did I see this morning", "what was that café I walked past").
 - visual_memory {on: true|false}: "start / pause visual memory" (photos every few minutes, only notes are kept).
-- phone_task {goal, app, destination}: do something in an app on the user's phone: "book me an Uber home", "order my
-  usual chai on Swiggy", "send mom a WhatsApp saying I'm on my way". app: uber, ola, rapido, swiggy, zomato, blinkit,
-  zepto, amazon, whatsapp, maps... destination only for rides and maps. Anything that pays or books is confirmed
-  on the phone first.
+- phone_task {goal, app, destination}: do something in an app on the user's phone, or just open one: "book me an Uber
+  home", "order my usual chai on Swiggy", "send mom a WhatsApp saying I'm on my way", "open my calendar on my phone".
+  app: the app's name (uber, swiggy, calendar...). When the user names no app ("order me sushi"), pick one they have.
+  destination only for rides and maps. Anything that pays or books is confirmed on the phone first.
 - translate_start {other_language}: "translate for me", "help me talk to her, she speaks Spanish" (live translator).
 - recall {query}: what you remember, or where something is ("where did I park", "where are my keys").
 - forget {query}: when the user asks you to forget something.
@@ -90,7 +90,9 @@ JSON only: {"spoken": "...", "details": "..."}"""
 
 # One-word answers that are real replies, not noise: confirmations, goodbyes, greetings.
 SHORT_REPLIES = {"yes", "yeah", "yep", "yup", "no", "nope", "nah", "haan", "ha", "han", "haa", "nahi", "nahin", "ok",
-                 "okay", "bye", "stop", "thanks", "thank", "hello", "hi", "हाँ", "हां", "नहीं", "बाय", "ठीक"}
+                 "okay", "bye", "stop", "thanks", "thank", "hello", "hi", "हाँ", "हां", "नहीं", "बाय", "ठीक",
+                 # Calls for help: the phone starts SOS on these (cj-android Sos.kt), so they must get through.
+                 "help", "sos", "emergency", "bachao", "madad", "बचाओ", "मदद"}
 
 
 def _noise(heard: str) -> bool:
@@ -100,7 +102,8 @@ def _noise(heard: str) -> bool:
 
 
 def _system(base: str) -> str:
-    return persona() + base + mac.PROMPT + TOOLS + recall.prompt() + mac.pending_prompt()
+    return (persona() + base + mac.PROMPT + TOOLS + phone_agent.prompt() + recall.prompt() + mac.pending_prompt()
+            + access.prompt())
 
 
 async def _finish(data: dict, spoken: str, question: str, history: list[dict]) -> dict:
@@ -151,9 +154,11 @@ async def _finish(data: dict, spoken: str, question: str, history: list[dict]) -
         result = recall.describe(seen) if seen else "LOOKUP FAILED: the glasses haven't noted anything in that time"
         out["spoken"], out["details"] = await _answer_from(result, question, history)
     elif name == "phone_task" and str(args.get("goal", "")).strip():
-        out["phone"] = {"action": "phone_task", "goal": str(args["goal"])[:300],
-                        **phone_agent.start(str(args.get("app", "")), str(args.get("destination", "") or ""))}
-        out["spoken"] = "On it. I'll check with you before anything is paid or booked."
+        goal = str(args["goal"])[:300]
+        start = phone_agent.start(str(args.get("app", "")), str(args.get("destination", "") or ""))
+        out["spoken"] = phone_agent.reply(goal, start)  # says the note, so the phone doesn't repeat it
+        if start["package"] or start["link"]:
+            out["phone"] = {"action": "phone_task", "goal": goal, **start, "note": ""}
     elif name == "translate_start":
         out["phone"] = {"action": "translate", "language": str(args.get("other_language", "")).strip()[:40]}
         out["spoken"] = "Okay, I'll translate. Go ahead."
@@ -250,7 +255,7 @@ async def glance(image: Attachment, last: str = "") -> str:
 
 async def _answer_from(result: str, question: str, history: list[dict]) -> tuple[str, str]:
     messages = history + [{"role": "user", "text": f"QUESTION: {question}\n\nRESULT:\n{result}"}]
-    data, raw = await ask_json("tool_answer", persona() + TOOL_ANSWER, messages)
+    data, raw = await ask_json("tool_answer", persona() + TOOL_ANSWER + access.prompt(), messages)
     return data.get("spoken") or raw.strip()[:300], data.get("details", "")
 
 
@@ -268,7 +273,8 @@ async def _describe_screen(question: str, prompt: str = SCREEN) -> tuple[str, st
     except mac.MacError:
         return ("I can't see your screen yet. Allow Screen Recording for the app running CJ's brain, "
                 "in System Settings, Privacy and Security."), ""
-    data, raw = await ask_json("screen", persona() + prompt, [{"role": "user", "text": question or "What's on my screen?"}],
+    data, raw = await ask_json("screen", persona() + prompt + access.prompt(),
+                               [{"role": "user", "text": question or "What's on my screen?"}],
                                Attachment(shot, "image/jpeg"))
     return data.get("spoken") or raw.strip()[:300], data.get("details", "")
 
