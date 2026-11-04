@@ -49,8 +49,15 @@ Meta AI keeps working alongside it: "Hey Meta" still goes to Meta, and "CJ" goes
 
 ## Features
 
-- **Phone agent.** Books Uber, reorders on Swiggy, sends WhatsApp messages. It reads the price back and waits for a
-  spoken yes before anything is paid, booked or sent.
+- **Phone agent.** Books Uber, reorders on Swiggy, sends WhatsApp messages and opens any app on your phone. It reads
+  the price back and waits for a spoken yes before anything is paid, booked or sent. If you name an app you don't
+  have, it uses one you do: "order on Zomato" goes to Swiggy, and it tells you.
+- **Accessibility.** For blind and low-vision users: reads signs, labels and letters word for word, names banknotes
+  and adds them up, describes what's in front of you starting with steps and obstacles, and reads a medicine's dose
+  and expiry date. You can also slow CJ's voice down, give it more time to hear you, and choose short or detailed
+  answers. Everything is off until you turn it on in Setup.
+- **SOS.** Say "CJ, help" or tap SOS. After a five-second countdown you can cancel, CJ texts someone you choose a map
+  link to where you are, then calls them. It runs on the phone, so it works when your Mac can't be reached.
 - **Mac control.** Opens and switches apps, presses keys, types, finds files, plays music, reads your screen, manages
   Calendar, Reminders and Mail.
 - **Coding on the go.** Sends tasks to [Claude Code](https://claude.com/claude-code) in your projects and tells you
@@ -95,7 +102,8 @@ cd rayban-meta-god-mode/cj-mac
 ```
 
 **3. Install the app and pair.** [Download CJ.apk](https://github.com/GhanshyamPaunikar/rayban-meta-god-mode/releases/latest/download/CJ.apk)
-on your phone and install it. In CJ, go to Setup → Scan QR code, then Link glasses. Say "CJ".
+on your phone and install it. The first time it opens, CJ asks for each permission it needs, one at a time, and says
+what each is for. Then go to Setup → Scan QR code, then Link glasses. Say "CJ".
 
 <details>
 <summary>Permissions</summary>
@@ -103,8 +111,14 @@ on your phone and install it. In CJ, go to Setup → Scan QR code, then Link gla
 <br/>
 
 On the Mac, allow Accessibility, Screen Recording, Calendar, Reminders, Contacts, Mail and Notes for the app that runs
-the brain. On the phone, allow Location (travel times and nudges) and Phone (calling a number you looked at), and turn
-on **CJ phone agent** under Settings → Accessibility if you want CJ to use apps for you.
+the brain.
+
+On the phone, the first-launch screens cover the microphone, Bluetooth, the glasses camera, location (travel times and
+nudges), phone calls, notifications, the phone agent and running in the background. You can skip any of them; Setup →
+Permissions lists them all with a Fix button for anything still missing. The phone agent and background running are
+switched on in Android's own settings, and CJ takes you to the right page. If Android says "Restricted setting" for the
+phone agent, open CJ's App info, tap ⋮ and choose "Allow restricted settings". SOS asks for permission to send texts
+when you turn it on.
 
 </details>
 
@@ -200,9 +214,35 @@ To use the classic Azure voice instead of real-time, turn off **Real-time voice*
 | "Book me an Uber to the airport" | Opens Uber with the drop-off filled in and asks "Request Uber Go, ₹240. Should I?" |
 | "Order my usual chai on Swiggy" | Finds your past order and asks before paying |
 | "Send mom a WhatsApp saying I'm on my way" | Types the message and sends it when you say yes |
+| "Open my calendar on my phone", "set an alarm for 7" | Opens the app, whichever ones you have installed |
+| "Order me sushi" | Uses a food app you have; if you name one you don't, it switches and tells you |
 
 The confirmation is enforced in code, not in the prompt, so text on a screen can't talk CJ out of it. CJ never types
 passwords, OTPs, PINs or card details; it hands those steps back to you.
+
+</details>
+
+<details>
+<summary>Accessibility and SOS</summary>
+
+<br/>
+
+Turn these on in Setup → Accessibility.
+
+| Say | What happens |
+|---|---|
+| "Read this" | Reads all the text in view, word for word (Read aloud) |
+| "How much money is this?" | Names each note and gives the total (Money reader) |
+| "What's in front of me?" | Steps, kerbs, doors and people close by first, with clock directions (Describe surroundings) |
+| "Read this medicine" | Name, strength, dose and expiry date, and whether it has expired (Medicine labels) |
+| "CJ, help", "help me", "SOS", "bachao" | SOS countdown; say "cancel" or tap Cancel SOS to stop it |
+
+**Slow speech** waits longer before deciding you've finished talking, **Confirm before acting** checks with you
+before any call, message, payment or order, and you can set CJ's speaking speed (0.75× to 1.5×) and answer length.
+
+SOS texts your contact a Google Maps link to where you are, then calls them. It also starts on a call for help in a
+longer sentence, like "help, help me, I've fallen". SOS doesn't replace emergency services: if you're in danger,
+call 112 or your local emergency number.
 
 </details>
 
@@ -358,11 +398,14 @@ after step 3. It reads back exactly what it is about to do and waits for you to 
 | `cj-mac/cj/mac.py` | Every action CJ can take on your devices, and which ones need a spoken yes |
 | `cj-mac/cj/tv.py`, `alexa.py` | TV and smart home |
 | `cj-mac/cj/recall.py` | Memory: topics, expiry, search by meaning, and learning from conversation |
+| `cj-mac/cj/access.py` | Accessibility settings, turned into instructions for the model |
 | `cj-mac/cj/lookups.py`, `scout.py` | Weather, news, facts and rates; web research |
 | `cj-mac/cj/llm/` | Gemini, Claude, GPT, DeepSeek, Groq, OpenRouter, Ollama, the fallback chain and spending limits |
 | `cj-android/.../Glasses.kt` | Connection to the glasses through Meta's toolkit |
 | `cj-android/.../Hotword.kt` | Offline "CJ" detection with Vosk |
 | `cj-android/.../Agent.kt` | The phone agent, which uses Uber, Swiggy and WhatsApp for you |
+| `cj-android/.../Sos.kt` | SOS: the countdown, the text with your location and the call |
+| `cj-android/.../Onboarding.kt` | The first-launch permission screens |
 
 ## Privacy and safety
 
@@ -372,6 +415,8 @@ after step 3. It reads back exactly what it is about to do and waits for you to 
 - Text on screens and in photos is treated as content, never as instructions.
 - Location is used only for travel times and nudges and isn't stored, except for places you name.
 - Visual memory is off by default and stores text only.
+- SOS sees only the one contact you pick, not your contact list, and sends nothing until the countdown ends.
+- To choose an app, the phone tells the brain the names of the apps you have installed, and nothing else about them.
 - Memory and notes stay on your Mac: `~/.cj/recall.db` and `~/.cj/notes.json`. Web pages CJ reads are treated as
   content, never as instructions.
 
@@ -403,6 +448,8 @@ CJ is an early project. I use it every day, but it has rough edges:
 - **Android only.** An iOS app is planned and depends on Meta's iOS toolkit.
 - **The phone agent reads app screens.** When Uber, Swiggy or WhatsApp redesign their screens, a flow can break
   until it's updated. It always fails safe: it stops and asks you before doing anything.
+- **Short words can get lost.** The glasses cut the sound between words, so a single quick "help" is sometimes
+  missed. "Help me, help" comes through reliably.
 - **Built and tested in India.** The examples, prices and apps reflect that. Other countries should mostly work,
   but expect gaps.
 - **Developer preview.** Meta's toolkit requires Developer Mode and may change. The Alexa integration uses an
